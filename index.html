@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>テニスゲーム</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+    }
+    h1 { font-size: 2rem; margin-bottom: 10px; letter-spacing: 4px; color: #e0e0e0; }
+    #info { font-size: 0.85rem; color: #aaa; margin-bottom: 16px; }
+    canvas {
+      border: 3px solid #444;
+      border-radius: 4px;
+      background: #16213e;
+      display: block;
+    }
+    #message {
+      margin-top: 14px;
+      font-size: 1rem;
+      color: #f0c040;
+      letter-spacing: 2px;
+      height: 1.4em;
+    }
+  </style>
+</head>
+<body>
+  <h1>TENNIS</h1>
+  <div id="info">W/S キー: 左パドル &nbsp;|&nbsp; ↑/↓ キー: 右パドル &nbsp;|&nbsp; Space: スタート</div>
+  <canvas id="c" width="800" height="500"></canvas>
+  <div id="message">Space キーを押してスタート</div>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const msg = document.getElementById('message');
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const PADDLE_W = 14;
+    const PADDLE_H = 90;
+    const BALL_R = 10;
+    const PADDLE_SPEED = 6;
+    const WIN_SCORE = 7;
+
+    let state = 'idle'; // idle | playing | paused | over
+
+    const paddle = {
+      left:  { x: 20,       y: H/2 - PADDLE_H/2, dy: 0, score: 0 },
+      right: { x: W - 20 - PADDLE_W, y: H/2 - PADDLE_H/2, dy: 0, score: 0 },
+    };
+
+    const ball = { x: W/2, y: H/2, vx: 0, vy: 0, speed: 5 };
+
+    const keys = {};
+    document.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (state === 'idle' || state === 'over') startGame();
+      }
+    });
+    document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    function startGame() {
+      paddle.left.score = 0;
+      paddle.right.score = 0;
+      paddle.left.y = H/2 - PADDLE_H/2;
+      paddle.right.y = H/2 - PADDLE_H/2;
+      state = 'playing';
+      msg.textContent = '';
+      serveBall();
+    }
+
+    function serveBall(dir = (Math.random() < 0.5 ? 1 : -1)) {
+      ball.x = W / 2;
+      ball.y = H / 2;
+      ball.speed = 5;
+      const angle = (Math.random() * 0.6 - 0.3); // -0.3 ~ 0.3 rad
+      ball.vx = dir * ball.speed * Math.cos(angle);
+      ball.vy = ball.speed * Math.sin(angle);
+    }
+
+    function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+
+    function update() {
+      if (state !== 'playing') return;
+
+      // Paddle movement
+      if (keys['KeyW'])      paddle.left.y  -= PADDLE_SPEED;
+      if (keys['KeyS'])      paddle.left.y  += PADDLE_SPEED;
+      if (keys['ArrowUp'])   paddle.right.y -= PADDLE_SPEED;
+      if (keys['ArrowDown']) paddle.right.y += PADDLE_SPEED;
+
+      paddle.left.y  = clamp(paddle.left.y,  0, H - PADDLE_H);
+      paddle.right.y = clamp(paddle.right.y, 0, H - PADDLE_H);
+
+      // Ball movement
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Top / bottom bounce
+      if (ball.y - BALL_R < 0) {
+        ball.y = BALL_R;
+        ball.vy = Math.abs(ball.vy);
+      }
+      if (ball.y + BALL_R > H) {
+        ball.y = H - BALL_R;
+        ball.vy = -Math.abs(ball.vy);
+      }
+
+      // Left paddle collision
+      const lp = paddle.left;
+      if (ball.x - BALL_R < lp.x + PADDLE_W && ball.x > lp.x &&
+          ball.y > lp.y && ball.y < lp.y + PADDLE_H) {
+        ball.x = lp.x + PADDLE_W + BALL_R;
+        reflectBall(lp);
+      }
+
+      // Right paddle collision
+      const rp = paddle.right;
+      if (ball.x + BALL_R > rp.x && ball.x < rp.x + PADDLE_W &&
+          ball.y > rp.y && ball.y < rp.y + PADDLE_H) {
+        ball.x = rp.x - BALL_R;
+        reflectBall(rp, -1);
+      }
+
+      // Score: ball exits left
+      if (ball.x - BALL_R < 0) {
+        paddle.right.score++;
+        checkWin('right');
+      }
+      // Score: ball exits right
+      if (ball.x + BALL_R > W) {
+        paddle.left.score++;
+        checkWin('left');
+      }
+    }
+
+    function reflectBall(p, dir = 1) {
+      const hitPos = (ball.y - (p.y + PADDLE_H / 2)) / (PADDLE_H / 2); // -1 ~ 1
+      const maxAngle = Math.PI / 4;
+      const angle = hitPos * maxAngle;
+      ball.speed = Math.min(ball.speed + 0.3, 14);
+      ball.vx = dir * ball.speed * Math.cos(angle);
+      ball.vy = ball.speed * Math.sin(angle);
+    }
+
+    function checkWin(winner) {
+      if (paddle[winner].score >= WIN_SCORE) {
+        state = 'over';
+        msg.textContent = (winner === 'left' ? '左' : '右') + 'プレイヤーの勝ち！ Space で再スタート';
+      } else {
+        serveBall(winner === 'left' ? 1 : -1);
+      }
+    }
+
+    // ── Drawing ──────────────────────────────────────────────
+
+    function drawRect(x, y, w, h, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, w, h);
+    }
+
+    function drawCircle(x, y, r, color) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    function drawNet() {
+      ctx.setLineDash([12, 10]);
+      ctx.strokeStyle = '#334';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    function drawScore() {
+      ctx.font = 'bold 52px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#e0e0e0';
+      ctx.fillText(paddle.left.score, W / 4, 70);
+      ctx.fillText(paddle.right.score, 3 * W / 4, 70);
+    }
+
+    function drawPaddle(p, color) {
+      // Shadow glow
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      drawRect(p.x, p.y, PADDLE_W, PADDLE_H, color);
+      ctx.shadowBlur = 0;
+    }
+
+    function drawBall() {
+      ctx.shadowColor = '#f0e060';
+      ctx.shadowBlur = 20;
+      drawCircle(ball.x, ball.y, BALL_R, '#f5e642');
+      ctx.shadowBlur = 0;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      drawNet();
+      drawScore();
+      drawPaddle(paddle.left, '#4fc3f7');
+      drawPaddle(paddle.right, '#ef9a9a');
+      drawBall();
+
+      if (state === 'idle') {
+        ctx.font = '20px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#888';
+        ctx.fillText('Space キーを押してスタート', W / 2, H / 2);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
